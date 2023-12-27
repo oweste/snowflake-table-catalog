@@ -8,7 +8,7 @@ st.set_page_config(layout="wide")
 # Uses st.experimental_singleton to only run once.
 
 
-@st.experimental_singleton
+@st.cache_resource 
 def init_connection():
     return snowflake.connector.connect(**st.secrets["snowflake"])
 
@@ -19,7 +19,7 @@ cur = conn.cursor()
 # Perform query.
 # Uses st.experimental_memo to only rerun when the query changes or after 10 min.
 
-@st.experimental_memo(ttl=600)
+@st.cache_data (ttl=600)
 def run_query(query):
     with conn.cursor() as cur:
         cur.execute(query)
@@ -163,7 +163,10 @@ if 'selectbox_database_key' not in st.session_state:
 
 # Table Catalog/Database
 fv_database = df['TABLE_CATALOG'].drop_duplicates()
-fv_database = fv_database.append(all_option)
+
+
+fv_database = pd.concat([fv_database,all_option])
+
 
 selectbox_database = st.sidebar.selectbox(
     'Database', fv_database, index=len(fv_database)-1, key=st.session_state.selectbox_database_key)
@@ -175,7 +178,7 @@ else:
 
 # Table Schema
 fv_table_schema = df['TABLE_SCHEMA'].drop_duplicates()
-fv_table_schema = fv_table_schema.append(all_option)
+fv_table_schema = pd.concat([fv_table_schema, all_option])
 
 selectbox_schema = st.sidebar.selectbox(
     "Table Schema", fv_table_schema, len(fv_table_schema)-1, key=st.session_state.selectbox_schema_key)
@@ -187,7 +190,7 @@ else:
 
 # Table Owner
 fv_owner = df['TABLE_OWNER'].drop_duplicates()
-fv_owner = fv_owner.append(all_option)
+fv_owner = pd.concat([fv_owner,all_option])
 selectbox_owner = st.sidebar.selectbox(
     "Table Owner", fv_owner, len(fv_owner)-1, key=st.session_state.selectbox_owner_key)
 
@@ -342,39 +345,55 @@ table_scorecard = """
 
 table_scorecard += """<br><br><br><div id="mydiv" class="ui centered cards">"""
 
-
 for index, row in df.iterrows():
+    table_name = row['TABLE_NAME'] if row['TABLE_NAME'] is not None else ""
+    table_catalog = row['TABLE_CATALOG'] if row['TABLE_CATALOG'] is not None else ""
+    table_schema = row['TABLE_SCHEMA'] if row['TABLE_SCHEMA'] is not None else ""
+    row_count = human_format(row['ROW_COUNT']) if row['ROW_COUNT'] is not None else ""
+    bytes_size = human_bytes(row['BYTES']) if row['BYTES'] is not None else ""
+    bytes_text = human_bytes_text(row['BYTES']) if row['BYTES'] is not None else ""
+    column_count = "{0:}".format(row['COLUMN_COUNT']) if row['COLUMN_COUNT'] is not None else ""
+    table_type = row['TABLE_TYPE'] if row['TABLE_TYPE'] is not None else ""
+    table_owner = str(row['TABLE_OWNER']) if row['TABLE_OWNER'] is not None else ""
+    created_date = row['CREATED'].strftime("%Y-%m-%d") if row['CREATED'] is not None else ""
+    retention_time = str(row['RETENTION_TIME']).strip(".0") if row['RETENTION_TIME'] is not None else ""
+    last_altered_date = row['LAST_ALTERED'].strftime("%Y-%m-%d") if row['LAST_ALTERED'] is not None else ""
+    is_transient = str(row['IS_TRANSIENT']) if row['IS_TRANSIENT'] is not None else ""
+    auto_clustering = str(row['AUTO_CLUSTERING_ON']) if row['AUTO_CLUSTERING_ON'] is not None else ""
+    clustering_key = str(row['IS_TRANSIENT']) if row['IS_TRANSIENT'] is not None else ""
+    comment = str(row['IS_TRANSIENT']) if row['IS_TRANSIENT'] is not None else ""
+
     table_scorecard += """
 <div class="card"">   
-    <div class=" content """+header_bg(row['TABLE_TYPE'])+"""">
-            <div class=" header smallheader">"""+row['TABLE_NAME']+"""</div>
-    <div class="meta smallheader">"""+row['TABLE_CATALOG']+"."+row['TABLE_SCHEMA']+"""</div>
+    <div class=" content """+header_bg(table_type)+"""">
+            <div class=" header smallheader">"""+table_name+"""</div>
+    <div class="meta smallheader">"""+table_catalog+"."+table_schema+"""</div>
     </div>
     <div class="content">
         <div class="description"><br>
-            <div class="column kpi number">"""+human_format(row['ROW_COUNT'])+"""<br>
+            <div class="column kpi number">"""+row_count+"""<br>
                 <p class="kpi text">Rows</p>
             </div>
-            <div class="column kpi number">"""+human_bytes(row['BYTES'])+"""<br>
-                <p class="kpi text">"""+human_bytes_text(row['BYTES'])+"""</p>
+            <div class="column kpi number">"""+bytes_size+"""<br>
+                <p class="kpi text">"""+bytes_text+"""</p>
             </div>
-            <div class="column kpi number">"""+"{0:}".format(row['COLUMN_COUNT'])+"""<br>
+            <div class="column kpi number">"""+column_count+"""<br>
                 <p class="kpi text">Columns</b>
             </div>
         </div>
     </div>
     <div class="extra content">
-        <div class="meta"><i class="table icon"></i> Table Type: """+(row['TABLE_TYPE'])+"""</div>
-        <div class="meta"><i class="user icon"></i> Owner: """+str(row['TABLE_OWNER'])+""" </div>
-        <div class="meta"><i class="calendar alternate outline icon"></i> Created On: """+(row['CREATED'].strftime("%Y-%m-%d"))+"""</div>
+        <div class="meta"><i class="table icon"></i> Table Type: """+table_type+"""</div>
+        <div class="meta"><i class="user icon"></i> Owner: """+table_owner+""" </div>
+        <div class="meta"><i class="calendar alternate outline icon"></i> Created On: """+created_date+"""</div>
     </div>
     <div class="extra content" """+view_details+"""> 
-        <div class="meta"><i class="history icon"></i> Time Travel: """+str((row['RETENTION_TIME'])).strip(".0")+"""</div>
-        <div class="meta"><i class="edit icon"></i> Last Altered: """+(row['LAST_ALTERED'].strftime("%Y-%m-%d"))+"""</div>
-        <div class="meta"><i class="calendar times outline icon"></i> Transient: """+str(row['IS_TRANSIENT'])+""" </div>
-        <div class="meta"><i class="th icon"></i> Auto Clustering: """+str(row['AUTO_CLUSTERING_ON'])+""" </div>
-        <div class="meta"><i class="key icon"></i> Clustering Key: """+str(row['IS_TRANSIENT'])+""" </div>
-        <div class="meta"><i class="comment alternate outline icon"></i> Comment: """+str(row['IS_TRANSIENT'])+""" </div>
+        <div class="meta"><i class="history icon"></i> Time Travel: """+retention_time+"""</div>
+        <div class="meta"><i class="edit icon"></i> Last Altered: """+last_altered_date+"""</div>
+        <div class="meta"><i class="calendar times outline icon"></i> Transient: """+is_transient+""" </div>
+        <div class="meta"><i class="th icon"></i> Auto Clustering: """+auto_clustering+""" </div>
+        <div class="meta"><i class="key icon"></i> Clustering Key: """+clustering_key+""" </div>
+        <div class="meta"><i class="comment alternate outline icon"></i> Comment: """+comment+""" </div>
     </div>
 </div>"""
 
